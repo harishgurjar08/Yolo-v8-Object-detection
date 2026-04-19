@@ -1,0 +1,37 @@
+# ============================================================
+# dataset.yaml — YOLO Format Dataset Configuration
+# ============================================================
+# This file tells YOLOv8 where your dataset lives and what
+# classes it contains. Edit the paths and class names below.
+# ============================================================
+
+# ----- Dataset Root -----
+# Path can be absolute or relative to where you run train.py
+path: dataset                # Root folder of the dataset
+
+# ----- Split Folders -----
+# Relative to 'path' above
+train: images/train          # Training images folder
+val:   images/val            # Validation images folder
+test:  images/test           # (Optional) Test images folder
+
+# ----- Class Count -----
+nc: 3                        # Number of object classes
+
+# ----- Class Names -----
+# List must match the integer labels in your .txt annotation files
+# Label 0 → cat, Label 1 → dog, Label 2 → person
+names:
+  0: cat
+  1: dog
+  2: person
+
+# ============================================================
+# YOLO Annotation Format (for each image, a .txt file):
+# Each line: <class_id> <x_center> <y_center> <width> <height>
+# All values are normalized to [0, 1] relative to image size.
+#
+# Example line:  0 0.5 0.4 0.3 0.25
+#   → class 0 (cat), centered at 50% x / 40% y,
+#     bounding box is 30% wide and 25% tall.
+# ============================================================

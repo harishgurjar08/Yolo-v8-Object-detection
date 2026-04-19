@@ -1,0 +1,32 @@
+# ============================================================
+# YOLOv8 Object Detection Project - Requirements
+# ============================================================
+# Install with: pip install -r requirements.txt
+# Python 3.12+ compatible
+
+# Core ML & Detection
+ultralytics>=8.2.0
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Computer Vision
+opencv-python-headless>=4.8.0
+# Note: do NOT add opencv-python here — it requires libGL.so.1 which is unavailable on Streamlit Cloud
+Pillow>=10.0.0
+
+# Web UI
+streamlit>=1.35.0
+streamlit-option-menu>=0.3.6
+
+# Utilities
+numpy>=1.26.0
+pandas>=2.1.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
+PyYAML>=6.0
+tqdm>=4.66.0
+
+# Optional: GPU Support (uncomment if you have CUDA)
+# torch>=2.9.0+cu118        # Replace standard torch with CUDA version
+# Visit: https://pytorch.org/get-started/locally/
+streamlit-webrtc>=0.47.0
