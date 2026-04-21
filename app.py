@@ -93,7 +93,7 @@ st.markdown("""
 /* ── Hide Default Streamlit Elements ── */
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
-header {visibility: hidden;}
+/*header {visibility: hidden;}
 
 /* ── Base Theme ── */
 .stApp {
