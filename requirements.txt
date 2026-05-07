@@ -31,4 +31,4 @@ tqdm>=4.66.0
 # Visit: https://pytorch.org/get-started/locally/
 streamlit-webrtc>=0.47.9
 aiortc>=1.9.0
-pyav>=12.0.0
+av>=12.0.0
