@@ -1,9 +1,5 @@
 libgl1
 libglib2.0-0
-libavdevice-dev
-libavfilter-dev
-libavformat-dev
-libavcodec-dev
-libavresample-dev
-libavutil-dev
-libsrtp2-dev
+ffmpeg
+libopus-dev
+libvpx-dev
