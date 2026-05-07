@@ -31,25 +31,12 @@ import cv2
 import numpy as np
 import pandas as pd
 import streamlit as st
-
-WEBRTC_AVAILABLE = False
-WEBRTC_ERROR = None
-
 try:
     import av
-    from streamlit_webrtc import (
-        webrtc_streamer,
-        WebRtcMode,
-        RTCConfiguration,
-    )
-    WEBRTC_AVAILABLE = True
-
-except Exception as e:
-    WEBRTC_ERROR = str(e)
-
-    st.warning(
-        f"⚠️ WebRTC not available on this deployment.\n\nError: {WEBRTC_ERROR}"
-    )
+    from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
+except ImportError:
+    st.error("❌ `streamlit-webrtc` or `av` not installed. Please add them to requirements.txt and install.")
+    st.stop()
 
 # ── Dependency check ──────────────────────────────────────────────────────────
 try:
@@ -620,149 +607,8 @@ def get_camera_state():
         "out_path": None
     }
 
-def tab_webcam_native(cfg: dict):
-    """
-    Native OpenCV webcam mode - faster but only works when running locally.
-    Falls back gracefully if camera cannot be opened.
-    """
-    st.subheader("📷 Native Webcam (Local Only)")
-    st.info("⚡ This mode uses OpenCV directly - faster than WebRTC but only works when running the app locally (not in browser).")
-
-    # Camera selection
-    cam_id = st.selectbox("Select Camera", [0, 1, 2], index=0,
-                          help="0 = default, 1 = external camera, etc.")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        start_cam = st.button("▶️ Start Camera", type="primary", use_container_width=True)
-    with col2:
-        stop_cam = st.button("⏹️ Stop Camera", use_container_width=True)
-
-    if stop_cam:
-        st.session_state.native_cam_running = False
-        st.rerun()
-
-    if start_cam:
-        st.session_state.native_cam_running = True
-
-    if not st.session_state.get("native_cam_running", False):
-        return
-
-    # Try to open camera with different backends
-    cap = None
-    backends = [
-        (cam_id, cv2.CAP_DSHOW),      # Windows
-        (cam_id, cv2.CAP_V4L2),       # Linux
-        (cam_id, cv2.CAP_AVFOUNDATION), # macOS
-        (cam_id, cv2.CAP_ANY),        # Fallback
-    ]
-
-    for cam, backend in backends:
-        cap = cv2.VideoCapture(cam, backend)
-        if cap.isOpened():
-            st.success(f"✅ Camera opened (backend: {backend})")
-            break
-        cap.release()
-
-    if cap is None or not cap.isOpened():
-        st.error("❌ Cannot open camera. Check:")
-        st.markdown("- Camera is connected")
-        st.markdown("- Camera is not in use by another app (Zoom, Teams, etc.)")
-        st.markdown("- You gave camera permissions if prompted")
-        st.session_state.native_cam_running = False
-        return
-
-    # Configure camera
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-
-    model = load_model_cached(cfg["weights"])
-    class_names = model.names
-
-    # Stream to UI
-    frame_placeholder = st.empty()
-    stats_placeholder = st.empty()
-
-    stop_btn_placeholder = st.empty()
-
-    fps_timer = time.time()
-    frame_count = 0
-
-    while st.session_state.get("native_cam_running", False):
-        ret, frame = cap.read()
-        if not ret:
-            st.error("⚠️ Failed to capture frame")
-            break
-
-        frame_count += 1
-
-        # Run inference
-        results = model.predict(
-            source=frame,
-            conf=cfg["conf"],
-            iou=cfg["iou"],
-            imgsz=cfg["imgsz"],
-            max_det=cfg["max_det"],
-            verbose=False,
-        )
-        num_dets = sum(len(r.boxes) for r in results if r.boxes is not None)
-
-        # Calculate FPS
-        now = time.time()
-        fps = 1.0 / max(now - fps_timer, 0.001)
-        fps_timer = now
-
-        # Annotate
-        annotated = draw_detections(frame, results, list(class_names.values()))
-        annotated = overlay_stats(annotated, num_dets, fps)
-
-        # Display
-        frame_placeholder.image(annotated, channels="BGR", use_container_width=True)
-        stats_placeholder.caption(f"🎯 Objects: {num_dets} | ⚡ FPS: {fps:.1f} | 📹 Frame: {frame_count}")
-
-        # Check stop button periodically
-        if frame_count % 10 == 0:
-            if stop_btn_placeholder.button("⏹️ Stop Camera", key=f"stop_{frame_count}"):
-                st.session_state.native_cam_running = False
-                break
-
-    cap.release()
-    st.success("✅ Camera stopped")
-
-
 def tab_webcam(cfg: dict):
-
-    # ── Mode Selection ───────────────────────────────────────
     st.subheader("📷 Real-Time Webcam Detection")
-
-    webcam_mode = st.radio(
-        "Select Mode:",
-        ["Browser Webcam (WebRTC)", "Native Camera (Local Only - Faster)"],
-        horizontal=True,
-        help="WebRTC works in browser but may be slower. Native mode is faster but only works when running app.py directly."
-    )
-
-    if webcam_mode == "Native Camera (Local Only - Faster)":
-        tab_webcam_native(cfg)
-        return
-
-    # ── WebRTC Browser Mode ─────────────────────────────────
-    if not WEBRTC_AVAILABLE:
-        st.error("❌ WebRTC not available on this deployment.")
-
-        if WEBRTC_ERROR:
-            st.code(WEBRTC_ERROR)
-
-        st.info(
-            "Try deploying with Python 3.12 using a runtime.txt file, or use Native Camera mode if running locally."
-        )
-
-        # Offer native mode as fallback
-        if st.button("� Switch to Native Camera Mode"):
-            st.rerun()
-        return
-
     st.write(
         "Capture frames from your **browser's webcam** for real-time object detection. "
         "Detection runs continuously on the live video stream."
@@ -770,32 +616,24 @@ def tab_webcam(cfg: dict):
 
     if "webcam_active" not in st.session_state:
         st.session_state.webcam_active = False
-    if "webcam_key" not in st.session_state:
-        st.session_state.webcam_key = 0
 
     if not st.session_state.webcam_active:
         st.info("💡 Click the button below to turn on your webcam and start the live feed.")
-
         if st.button("🚀 Open Webcam", use_container_width=False, type="primary"):
             st.session_state.webcam_active = True
-            st.session_state.webcam_key += 1  # Force new WebRTC session
             st.rerun()
-
         return
 
-    # If active, show stop button
+    # If active, show the stop button
     if st.button("🛑 Close Webcam", use_container_width=False, type="secondary"):
         st.session_state.webcam_active = False
         st.rerun()
 
     cam_state = get_camera_state()
-
     model = load_model_cached(cfg["weights"])
     class_names = model.names
 
-    # ── Frame callback ────────────────────────────────────────
     def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
-
         img = frame.to_ndarray(format="bgr24")
 
         # Run inference
@@ -807,178 +645,89 @@ def tab_webcam(cfg: dict):
             max_det=cfg["max_det"],
             verbose=False,
         )
+        
+        num_dets = sum(len(r.boxes) for r in results if r.boxes is not None)
+        annotated = draw_detections(img, results, list(class_names.values()))
+        annotated = overlay_stats(annotated, num_dets)
 
-        num_dets = sum(
-            len(r.boxes) for r in results if r.boxes is not None
-        )
-
-        annotated = draw_detections(
-            img,
-            results,
-            list(class_names.values())
-        )
-
-        annotated = overlay_stats(
-            annotated,
-            num_dets
-        )
-
-        # ── Snapshot handling ────────────────────────────────
+        # Handle Snapshot Request
         if cam_state["snapshot_req"]:
             cam_state["latest_snapshot"] = annotated.copy()
             cam_state["snapshot_req"] = False
-
-        # ── Recording handling ───────────────────────────────
+            
+        # Handle Video Recording
         if cam_state["recording"]:
-
             if cam_state["video_writer"] is None:
-
                 h, w = annotated.shape[:2]
-
                 out_name = f"webcam_rec_{int(time.time())}.mp4"
-
                 out_path = str(OUTPUT_DIR / out_name)
-
                 fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-
-                cam_state["video_writer"] = cv2.VideoWriter(
-                    out_path,
-                    fourcc,
-                    20.0,
-                    (w, h)
-                )
-
+                # Using 20.0 fps as a reasonable default for WebRTC streams
+                cam_state["video_writer"] = cv2.VideoWriter(out_path, fourcc, 20.0, (w, h))
                 cam_state["out_path"] = out_path
-
             cam_state["video_writer"].write(annotated)
-
         else:
-
             if cam_state["video_writer"] is not None:
                 cam_state["video_writer"].release()
                 cam_state["video_writer"] = None
 
-        return av.VideoFrame.from_ndarray(
-            annotated,
-            format="bgr24"
-        )
+        return av.VideoFrame.from_ndarray(annotated, format="bgr24")
 
-    # ── Layout ───────────────────────────────────────────────
+    # Setup the two-column layout for the player and the controls
     c1, c2 = st.columns([3, 1], gap="large")
-
+    
     with c1:
-
-        # Add TURN server for networks that block STUN (corporate/VPN)
-        rtc_config = RTCConfiguration(
-            {
-                "iceServers": [
-                    {"urls": ["stun:stun.l.google.com:19302"]},
-                    {"urls": ["stun:stun1.l.google.com:19302"]},
-                    # Free TURN server from Open Relay (for testing)
-                    {
-                        "urls": ["turn:openrelay.metered.ca:80"],
-                        "username": "openrelayproject",
-                        "credential": "openrelayproject",
-                    },
-                ],
-                "iceCandidatePoolSize": 10,
-            }
-        )
-
         webrtc_ctx = webrtc_streamer(
-            key=f"webcam-detection-{st.session_state.get('webcam_key', 0)}",
+            key="webcam-detection",
             mode=WebRtcMode.SENDRECV,
-            rtc_configuration=rtc_config,
+            rtc_configuration=RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}),
             video_frame_callback=video_frame_callback,
             media_stream_constraints={"video": True, "audio": False},
-            async_processing=False,
+            async_processing=True,
             desired_playing_state=st.session_state.webcam_active,
         )
-
-    # ── Controls ─────────────────────────────────────────────
+        
     with c2:
-
         st.markdown("### 🎛️ Controls")
-
         if webrtc_ctx.state.playing:
-
             st.success("🟢 Live Stream Active")
-
-            # Snapshot
-            if st.button(
-                "📸 Capture Snapshot",
-                use_container_width=True
-            ):
+            
+            # --- Snapshot Button ---
+            if st.button("📸 Capture Snapshot", use_container_width=True):
                 cam_state["snapshot_req"] = True
-
+                
             st.divider()
-
-            # Recording toggle
+            
+            # --- Recording Toggle ---
             if not cam_state["recording"]:
-
-                if st.button(
-                    "🎥 Start Recording",
-                    use_container_width=True
-                ):
+                if st.button("🎥 Start Recording", use_container_width=True):
                     cam_state["recording"] = True
                     st.rerun()
-
             else:
-
-                if st.button(
-                    "🛑 Stop Recording",
-                    type="primary",
-                    use_container_width=True
-                ):
-
+                if st.button("🛑 Stop Recording", type="primary", use_container_width=True):
                     cam_state["recording"] = False
-
                     if cam_state["video_writer"] is not None:
                         cam_state["video_writer"].release()
                         cam_state["video_writer"] = None
-
                     st.rerun()
 
             if cam_state["recording"]:
-                st.error("🔴 Recording in progress...")
-
+                st.error("🔴 Recording in progress... Please stand by.")
+        
         else:
-            st.warning("⏳ Waiting for stream to start... (May take 10-30s)")
-            st.info("💡 Check: 1) Camera permissions in browser  2) Not blocked by VPN/Firewall  3) Use Chrome/Edge")
-
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🔄 Restart Webcam", use_container_width=True):
-                    st.session_state.webcam_key += 1
-                    st.rerun()
-            with col2:
-                if st.button("❌ Stop & Exit", use_container_width=True):
-                    st.session_state.webcam_active = False
-                    st.rerun()
+            st.warning("⏳ Waiting for stream to start...")
 
     st.divider()
-
-    # ── Latest snapshot ──────────────────────────────────────
+    
+    # ── Display the latest snapshot ──
     if cam_state["latest_snapshot"] is not None:
-
         st.subheader("🖼️ Latest Snapshot")
-
         col_snap, col_snap_btn = st.columns([3, 1])
-
         with col_snap:
-
-            st.image(
-                cam_state["latest_snapshot"],
-                channels="BGR",
-                use_container_width=True
-            )
-
+            st.image(cam_state["latest_snapshot"], channels="BGR", use_container_width=True)
+            
         with col_snap_btn:
-
-            snap_bytes = frame_to_bytes(
-                cam_state["latest_snapshot"]
-            )
-
+            snap_bytes = frame_to_bytes(cam_state["latest_snapshot"])
             st.download_button(
                 label="⬇️ Download Snapshot",
                 data=snap_bytes,
@@ -986,33 +735,21 @@ def tab_webcam(cfg: dict):
                 mime="image/jpeg",
                 use_container_width=True
             )
-
-            if st.button(
-                "🗑️ Clear Snapshot",
-                use_container_width=True
-            ):
+            
+            if st.button("🗑️ Clear Snapshot", use_container_width=True):
                 cam_state["latest_snapshot"] = None
                 st.rerun()
 
-    # ── Download last recording ──────────────────────────────
-    if (
-        not cam_state["recording"]
-        and cam_state["out_path"] is not None
-    ):
-
+    # ── Provide link to download last recording ──
+    if not cam_state["recording"] and cam_state["out_path"] is not None:
         if os.path.exists(cam_state["out_path"]):
-
             with open(cam_state["out_path"], "rb") as f:
                 rec_bytes = f.read()
-
-            st.success("✅ Video successfully saved!")
-
+            st.success(f"✅ Video successfully saved!")
             st.download_button(
                 label="⬇️ Download Last Recording",
                 data=rec_bytes,
-                file_name=os.path.basename(
-                    cam_state["out_path"]
-                ),
+                file_name=os.path.basename(cam_state["out_path"]),
                 mime="video/mp4"
             )
 
