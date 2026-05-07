@@ -34,9 +34,9 @@ import streamlit as st
 try:
     import av
     from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
+    HAS_WEBRTC = True
 except ImportError:
-    st.error("❌ `streamlit-webrtc` or `av` not installed. Please add them to requirements.txt and install.")
-    st.stop()
+    HAS_WEBRTC = False
 
 # ── Dependency check ──────────────────────────────────────────────────────────
 try:
@@ -613,6 +613,48 @@ def tab_webcam(cfg: dict):
         "Capture frames from your **browser's webcam** for real-time object detection. "
         "Detection runs continuously on the live video stream."
     )
+
+    # Streamlit Cloud compatibility: if PyAV / streamlit-webrtc isn't importable,
+    # fall back to Streamlit's built-in camera input (snapshot-based).
+    if not HAS_WEBRTC:
+        st.warning(
+            "WebRTC webcam mode isn't available in this deployment (missing `streamlit-webrtc`/`av`). "
+            "Using snapshot mode instead."
+        )
+        cam_img = st.camera_input("Take a photo")
+        if cam_img is None:
+            return
+
+        file_bytes = np.frombuffer(cam_img.getvalue(), np.uint8)
+        frame = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        if frame is None:
+            st.error("❌ Could not read the camera image.")
+            return
+
+        model = load_model_cached(cfg["weights"])
+        class_names = model.names
+        with st.spinner("🔍 Running detection…"):
+            results = model.predict(
+                source=frame,
+                conf=cfg["conf"],
+                iou=cfg["iou"],
+                imgsz=cfg["imgsz"],
+                max_det=cfg["max_det"],
+                verbose=False,
+            )
+
+        num_dets = sum(len(r.boxes) for r in results if r.boxes is not None)
+        annotated = draw_detections(frame, results, list(class_names.values()))
+        annotated = overlay_stats(annotated, num_dets)
+        st.image(annotated, channels="BGR", use_container_width=True)
+
+        st.download_button(
+            label="⬇️ Download Annotated Photo",
+            data=frame_to_bytes(annotated),
+            file_name=f"webcam_photo_{int(time.time())}.jpg",
+            mime="image/jpeg",
+        )
+        return
 
     if "webcam_active" not in st.session_state:
         st.session_state.webcam_active = False
