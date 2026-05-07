@@ -620,21 +620,149 @@ def get_camera_state():
         "out_path": None
     }
 
+def tab_webcam_native(cfg: dict):
+    """
+    Native OpenCV webcam mode - faster but only works when running locally.
+    Falls back gracefully if camera cannot be opened.
+    """
+    st.subheader("📷 Native Webcam (Local Only)")
+    st.info("⚡ This mode uses OpenCV directly - faster than WebRTC but only works when running the app locally (not in browser).")
+
+    # Camera selection
+    cam_id = st.selectbox("Select Camera", [0, 1, 2], index=0,
+                          help="0 = default, 1 = external camera, etc.")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        start_cam = st.button("▶️ Start Camera", type="primary", use_container_width=True)
+    with col2:
+        stop_cam = st.button("⏹️ Stop Camera", use_container_width=True)
+
+    if stop_cam:
+        st.session_state.native_cam_running = False
+        st.rerun()
+
+    if start_cam:
+        st.session_state.native_cam_running = True
+
+    if not st.session_state.get("native_cam_running", False):
+        return
+
+    # Try to open camera with different backends
+    cap = None
+    backends = [
+        (cam_id, cv2.CAP_DSHOW),      # Windows
+        (cam_id, cv2.CAP_V4L2),       # Linux
+        (cam_id, cv2.CAP_AVFOUNDATION), # macOS
+        (cam_id, cv2.CAP_ANY),        # Fallback
+    ]
+
+    for cam, backend in backends:
+        cap = cv2.VideoCapture(cam, backend)
+        if cap.isOpened():
+            st.success(f"✅ Camera opened (backend: {backend})")
+            break
+        cap.release()
+
+    if cap is None or not cap.isOpened():
+        st.error("❌ Cannot open camera. Check:")
+        st.markdown("- Camera is connected")
+        st.markdown("- Camera is not in use by another app (Zoom, Teams, etc.)")
+        st.markdown("- You gave camera permissions if prompted")
+        st.session_state.native_cam_running = False
+        return
+
+    # Configure camera
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+    model = load_model_cached(cfg["weights"])
+    class_names = model.names
+
+    # Stream to UI
+    frame_placeholder = st.empty()
+    stats_placeholder = st.empty()
+
+    stop_btn_placeholder = st.empty()
+
+    fps_timer = time.time()
+    frame_count = 0
+
+    while st.session_state.get("native_cam_running", False):
+        ret, frame = cap.read()
+        if not ret:
+            st.error("⚠️ Failed to capture frame")
+            break
+
+        frame_count += 1
+
+        # Run inference
+        results = model.predict(
+            source=frame,
+            conf=cfg["conf"],
+            iou=cfg["iou"],
+            imgsz=cfg["imgsz"],
+            max_det=cfg["max_det"],
+            verbose=False,
+        )
+        num_dets = sum(len(r.boxes) for r in results if r.boxes is not None)
+
+        # Calculate FPS
+        now = time.time()
+        fps = 1.0 / max(now - fps_timer, 0.001)
+        fps_timer = now
+
+        # Annotate
+        annotated = draw_detections(frame, results, list(class_names.values()))
+        annotated = overlay_stats(annotated, num_dets, fps)
+
+        # Display
+        frame_placeholder.image(annotated, channels="BGR", use_container_width=True)
+        stats_placeholder.caption(f"🎯 Objects: {num_dets} | ⚡ FPS: {fps:.1f} | 📹 Frame: {frame_count}")
+
+        # Check stop button periodically
+        if frame_count % 10 == 0:
+            if stop_btn_placeholder.button("⏹️ Stop Camera", key=f"stop_{frame_count}"):
+                st.session_state.native_cam_running = False
+                break
+
+    cap.release()
+    st.success("✅ Camera stopped")
+
+
 def tab_webcam(cfg: dict):
 
-    # ── WebRTC availability check ─────────────────────────────
+    # ── Mode Selection ───────────────────────────────────────
+    st.subheader("📷 Real-Time Webcam Detection")
+
+    webcam_mode = st.radio(
+        "Select Mode:",
+        ["Browser Webcam (WebRTC)", "Native Camera (Local Only - Faster)"],
+        horizontal=True,
+        help="WebRTC works in browser but may be slower. Native mode is faster but only works when running app.py directly."
+    )
+
+    if webcam_mode == "Native Camera (Local Only - Faster)":
+        tab_webcam_native(cfg)
+        return
+
+    # ── WebRTC Browser Mode ─────────────────────────────────
     if not WEBRTC_AVAILABLE:
-        st.error("❌ Webcam feature unavailable on this deployment.")
+        st.error("❌ WebRTC not available on this deployment.")
 
         if WEBRTC_ERROR:
             st.code(WEBRTC_ERROR)
 
         st.info(
-            "Try deploying with Python 3.12 using a runtime.txt file."
+            "Try deploying with Python 3.12 using a runtime.txt file, or use Native Camera mode if running locally."
         )
+
+        # Offer native mode as fallback
+        if st.button("� Switch to Native Camera Mode"):
+            st.rerun()
         return
 
-    st.subheader("📷 Real-Time Webcam Detection")
     st.write(
         "Capture frames from your **browser's webcam** for real-time object detection. "
         "Detection runs continuously on the live video stream."
@@ -744,19 +872,23 @@ def tab_webcam(cfg: dict):
             rtc_configuration=RTCConfiguration(
                 {
                     "iceServers": [
-                        {
-                            "urls": [
-                                "stun:stun.l.google.com:19302"
-                            ]
-                        }
-                    ]
+                        {"urls": ["stun:stun.l.google.com:19302"]},
+                        {"urls": ["stun:stun1.l.google.com:19302"]},
+                        {"urls": ["stun:stun2.l.google.com:19302"]},
+                        {"urls": ["stun:stun3.l.google.com:19302"]},
+                    ],
+                    "iceCandidatePoolSize": 10,
                 }
             ),
 
             video_frame_callback=video_frame_callback,
 
             media_stream_constraints={
-                "video": True,
+                "video": {
+                    "width": {"min": 320, "ideal": 640, "max": 1280},
+                    "height": {"min": 240, "ideal": 480, "max": 720},
+                    "frameRate": {"ideal": 15, "max": 30},
+                },
                 "audio": False,
             },
 
@@ -813,7 +945,8 @@ def tab_webcam(cfg: dict):
                 st.error("🔴 Recording in progress...")
 
         else:
-            st.warning("⏳ Waiting for stream to start...")
+            st.warning("⏳ Waiting for stream to start... (May take 10-30s on first connection)")
+            st.info("💡 Tip: If stuck here, try refreshing the page or check browser camera permissions.")
 
     st.divider()
 
