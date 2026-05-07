@@ -868,22 +868,30 @@ def tab_webcam(cfg: dict):
 
     with c1:
 
+        # Add TURN server for networks that block STUN (corporate/VPN)
+        rtc_config = RTCConfiguration(
+            {
+                "iceServers": [
+                    {"urls": ["stun:stun.l.google.com:19302"]},
+                    {"urls": ["stun:stun1.l.google.com:19302"]},
+                    # Free TURN server from Open Relay (for testing)
+                    {
+                        "urls": ["turn:openrelay.metered.ca:80"],
+                        "username": "openrelayproject",
+                        "credential": "openrelayproject",
+                    },
+                ],
+                "iceCandidatePoolSize": 10,
+            }
+        )
+
         webrtc_ctx = webrtc_streamer(
             key=f"webcam-detection-{st.session_state.get('webcam_key', 0)}",
             mode=WebRtcMode.SENDRECV,
-
-            rtc_configuration=RTCConfiguration(
-                {
-                    "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
-                }
-            ),
-
+            rtc_configuration=rtc_config,
             video_frame_callback=video_frame_callback,
-
             media_stream_constraints={"video": True, "audio": False},
-
             async_processing=False,
-
             desired_playing_state=st.session_state.webcam_active,
         )
 
@@ -935,8 +943,18 @@ def tab_webcam(cfg: dict):
                 st.error("🔴 Recording in progress...")
 
         else:
-            st.warning("⏳ Waiting for stream to start... (May take 10-30s on first connection)")
-            st.info("💡 Tip: If stuck here, try refreshing the page or check browser camera permissions.")
+            st.warning("⏳ Waiting for stream to start... (May take 10-30s)")
+            st.info("💡 Check: 1) Camera permissions in browser  2) Not blocked by VPN/Firewall  3) Use Chrome/Edge")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🔄 Restart Webcam", use_container_width=True):
+                    st.session_state.webcam_key += 1
+                    st.rerun()
+            with col2:
+                if st.button("❌ Stop & Exit", use_container_width=True):
+                    st.session_state.webcam_active = False
+                    st.rerun()
 
     st.divider()
 
