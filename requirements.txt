@@ -30,3 +30,4 @@ tqdm>=4.66.0
 # torch>=2.9.0+cu118        # Replace standard torch with CUDA version
 # Visit: https://pytorch.org/get-started/locally/
 streamlit-webrtc>=0.47.0
+av==11.0.0
