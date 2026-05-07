@@ -770,12 +770,15 @@ def tab_webcam(cfg: dict):
 
     if "webcam_active" not in st.session_state:
         st.session_state.webcam_active = False
+    if "webcam_key" not in st.session_state:
+        st.session_state.webcam_key = 0
 
     if not st.session_state.webcam_active:
         st.info("💡 Click the button below to turn on your webcam and start the live feed.")
 
         if st.button("🚀 Open Webcam", use_container_width=False, type="primary"):
             st.session_state.webcam_active = True
+            st.session_state.webcam_key += 1  # Force new WebRTC session
             st.rerun()
 
         return
@@ -866,33 +869,20 @@ def tab_webcam(cfg: dict):
     with c1:
 
         webrtc_ctx = webrtc_streamer(
-            key="webcam-detection",
+            key=f"webcam-detection-{st.session_state.get('webcam_key', 0)}",
             mode=WebRtcMode.SENDRECV,
 
             rtc_configuration=RTCConfiguration(
                 {
-                    "iceServers": [
-                        {"urls": ["stun:stun.l.google.com:19302"]},
-                        {"urls": ["stun:stun1.l.google.com:19302"]},
-                        {"urls": ["stun:stun2.l.google.com:19302"]},
-                        {"urls": ["stun:stun3.l.google.com:19302"]},
-                    ],
-                    "iceCandidatePoolSize": 10,
+                    "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
                 }
             ),
 
             video_frame_callback=video_frame_callback,
 
-            media_stream_constraints={
-                "video": {
-                    "width": {"min": 320, "ideal": 640, "max": 1280},
-                    "height": {"min": 240, "ideal": 480, "max": 720},
-                    "frameRate": {"ideal": 15, "max": 30},
-                },
-                "audio": False,
-            },
+            media_stream_constraints={"video": True, "audio": False},
 
-            async_processing=True,
+            async_processing=False,
 
             desired_playing_state=st.session_state.webcam_active,
         )
