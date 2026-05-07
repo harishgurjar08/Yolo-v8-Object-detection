@@ -431,36 +431,16 @@ def detect_webcam(args) -> None:
     output_dir  = Path(args.output_dir) / "webcam"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Try different backends for cross-platform compatibility
-    cap = None
-    backends = [
-        (args.webcam_id, cv2.CAP_DSHOW),    # Windows DirectShow (fastest)
-        (args.webcam_id, cv2.CAP_V4L2),     # Linux
-        (args.webcam_id, cv2.CAP_AVFOUNDATION),  # macOS
-        (args.webcam_id, cv2.CAP_ANY),      # Auto-detect fallback
-    ]
+    cap = cv2.VideoCapture(args.webcam_id, cv2.CAP_AVFOUNDATION)
 
-    for cam_id, backend in backends:
-        cap = cv2.VideoCapture(cam_id, backend)
-        if cap.isOpened():
-            print(f"✅ Camera opened with backend: {backend}")
-            break
-        cap.release()
+    if not cap.isOpened():
+           print(f"❌ Cannot open camera (id={args.webcam_id}). "
+          "Check that a webcam is connected and not in use by another app.")
+    sys.exit(1)
 
-    if cap is None or not cap.isOpened():
-        print(f"❌ Cannot open camera (id={args.webcam_id}).")
-        print("   Check that a webcam is connected and not in use by another app.")
-        sys.exit(1)
-
-    # Set smaller buffer for lower latency
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
-    # Try to set resolution, but fall back if not supported
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    # Reduce resolution for better performance on low-end systems
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    print(f"📹 Camera resolution: {actual_width}×{actual_height}")
 
     print("📷 Webcam detection started.")
     print("   Q = quit   |   S = save current frame\n")
