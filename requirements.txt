@@ -29,6 +29,6 @@ tqdm>=4.66.0
 # Optional: GPU Support (uncomment if you have CUDA)
 # torch>=2.9.0+cu118        # Replace standard torch with CUDA version
 # Visit: https://pytorch.org/get-started/locally/
-# Pin versions for Streamlit Cloud stability (PyAV wheels + webrtc stack).
-streamlit-webrtc==0.47.9
-av==12.0.0
+# Modern versions compatible with current Streamlit Cloud builds.
+streamlit-webrtc>=0.63.0,<0.65.0
+av>=14.0.0,<17.0.0

@@ -31,12 +31,14 @@ import cv2
 import numpy as np
 import pandas as pd
 import streamlit as st
+WEBRTC_IMPORT_ERROR = None
 try:
     import av
     from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
     HAS_WEBRTC = True
-except ImportError:
+except Exception as e:
     HAS_WEBRTC = False
+    WEBRTC_IMPORT_ERROR = e
 
 # ── Dependency check ──────────────────────────────────────────────────────────
 try:
@@ -621,6 +623,8 @@ def tab_webcam(cfg: dict):
             "WebRTC webcam mode isn't available in this deployment (missing `streamlit-webrtc`/`av`). "
             "Using snapshot mode instead."
         )
+        if WEBRTC_IMPORT_ERROR is not None:
+            st.caption(f"Import detail: {type(WEBRTC_IMPORT_ERROR).__name__}: {WEBRTC_IMPORT_ERROR}")
         cam_img = st.camera_input("Take a photo")
         if cam_img is None:
             return
